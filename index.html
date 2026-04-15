@@ -235,19 +235,21 @@
                 if (totalHoras > 6) horas50 = totalHoras - 6;
             }
         } else if (diaSemana === 6) { // SÁBADO
-            let horasAntes13 = 0;
+            let horasTrabajadas = 0;
             let iterSabado = new Date(entrada);
             while(iterSabado < salida) {
-                if(iterSabado.getHours() >= 13) {
-                    horas100 += 0.5; // Después de las 13:00hs al 100%
+                if (horasTrabajadas < 6) {
+                    // Dentro de las 6 horas de contrato (no es extra)
+                    horasTrabajadas += 0.5;
                 } else {
-                    horasAntes13 += 0.5; // Antes de las 13:00hs es normal
+                    // Ya superó las 6 horas de contrato (horas extras)
+                    if(iterSabado.getHours() >= 13) {
+                        horas100 += 0.5; // Extras después de las 13:00hs al 100%
+                    } else {
+                        horas50 += 0.5; // Extras antes de las 13:00hs al 50%
+                    }
                 }
                 iterSabado.setMinutes(iterSabado.getMinutes() + 30);
-            }
-            // Si antes de las 13 hs superó las 6 horas, van al 50%
-            if (horasAntes13 > 6) {
-                horas50 = horasAntes13 - 6;
             }
         } else { // LUNES A VIERNES
             if(totalHoras > 6) horas50 = totalHoras - 6;
