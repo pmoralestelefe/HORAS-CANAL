@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Horas</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        h2 { color: #333; border-bottom: 2px solid #007BFF; padding-bottom: 10px; }
+        
+        /* Cajas de Resumen */
+        .dashboard { display: flex; gap: 15px; margin-bottom: 30px; }
+        .box { flex: 1; padding: 15px; text-align: center; border-radius: 8px; color: white; font-weight: bold; }
+        .box-50 { background-color: #f39c12; }
+        .box-100 { background-color: #e74c3c; }
+        .box-night { background-color: #34495e; }
+        .box-francos { background-color: #27ae60; }
+        .box span { display: block; font-size: 24px; margin-top: 10px; }
+
+        /* Formularios */
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="datetime-local"], input[type="date"], input[type="number"], select { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        .checkbox-group { display: flex; align-items: center; gap: 10px; }
+        
+        /* Botones */
+        .btn { padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; margin-right: 10px; }
+        .btn-in { background-color: #2ecc71; }
+        .btn-out { background-color: #e67e22; }
+        .btn-save { background-color: #3498db; width: 100%; margin-top: 15px; font-size: 16px; }
+        
+        .section { background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Mi Control de Horas</h2>
+
+    <div class="form-group" style="width: 150px;">
+        <label>Año en curso:</label>
+        <select id="select-year"></select>
+    </div>
+
+    <div class="dashboard">
+        <div class="box box-50">Horas al 50%<span id="res-50">0:00</span></div>
+        <div class="box box-100">Horas al 100%<span id="res-100">0:00</span></div>
+        <div class="box box-night">Horas Nocturnas<span id="res-night">0:00</span></div>
+        <div class="box box-francos">Francos Ganados<span id="res-francos">0</span></div>
+    </div>
+
+    <div class="section">
+        <h3>Cargar Fichaje</h3>
+        <div style="margin-bottom: 15px;">
+            <button class="btn btn-in" onclick="marcarTiempo('entrada')">MARCAR ENTRADA AHORA</button>
+            <button class="btn btn-out" onclick="marcarTiempo('salida')">MARCAR SALIDA AHORA</button>
+        </div>
+
+        <div class="form-group">
+            <label>O ingresar manualmente:</label>
+            <div style="display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                    <label style="font-size: 12px;">Entrada</label>
+                    <input type="datetime-local" id="input-entrada">
+                </div>
+                <div style="flex: 1;">
+                    <label style="font-size: 12px;">Salida</label>
+                    <input type="datetime-local" id="input-salida">
+                </div>
+            </div>
+        </div>
+
+        <div class="form-group checkbox-group">
+            <input type="checkbox" id="check-feriado">
+            <label for="check-feriado" style="margin: 0;">Es Feriado Nacional</label>
+        </div>
+
+        <button class="btn btn-save" onclick="calcularYGuardarTurno()">Procesar y Guardar Turno</button>
+    </div>
+
+    <div class="section">
+        <h3>Licencias y Francos</h3>
+        <div class="form-group">
+            <label>Consumir un Franco Compensatorio (Fecha):</label>
+            <input type="date" id="fecha-uso-franco">
+        </div>
+        <hr style="border-top: 1px solid #ccc;">
+        <div class="form-group">
+            <label>Tomar Vacaciones (Total: 21 días)</label>
+            <div style="display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                    <label style="font-size: 12px;">Salida</label>
+                    <input type="date" id="vacaciones-salida">
+                </div>
+                <div style="flex: 1;">
+                    <label style="font-size: 12px;">Vuelta</label>
+                    <input type="date" id="vacaciones-vuelta">
+                </div>
+            </div>
+        </div>
+        <p style="font-weight: bold; color: #555;">Días de vacaciones restantes: <span id="vacaciones-restantes">21</span></p>
+    </div>
+
+</div>
+
+<script>
+    // Inicializar el selector de años
+    const selectYear = document.getElementById('select-year');
+    const currentYear = new Date().getFullYear();
+    for (let i = currentYear - 1; i <= currentYear + 2; i++) {
+        let option = document.createElement('option');
+        option.value = i;
+        option.text = i;
+        if (i === currentYear) option.selected = true;
+        selectYear.appendChild(option);
+    }
+
+    // Función que aplica la regla del empleador (16:06 -> 16:30, 22:46 -> 23:00)
+    function redondearHorario(fechaActual) {
+        let minutos = fechaActual.getMinutes();
+        let redondeo = Math.ceil(minutos / 30) * 30; // Redondea al bloque de 30 min más cercano hacia arriba
+        
+        let nuevaFecha = new Date(fechaActual);
+        if (redondeo === 60) {
+            nuevaFecha.setHours(nuevaFecha.getHours() + 1);
+            nuevaFecha.setMinutes(0);
+        } else {
+            nuevaFecha.setMinutes(redondeo);
+        }
+        nuevaFecha.setSeconds(0);
+        nuevaFecha.setMilliseconds(0);
+        
+        return nuevaFecha;
+    }
+
+    // Formatear fecha para el input datetime-local
+    function formatearParaInput(fechaObj) {
+        let year = fechaObj.getFullYear();
+        let month = (fechaObj.getMonth() + 1).toString().padStart(2, '0');
+        let day = fechaObj.getDate().toString().padStart(2, '0');
+        let hours = fechaObj.getHours().toString().padStart(2, '0');
+        let minutes = fechaObj.getMinutes().toString().padStart(2, '0');
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+
+    // Funciones para los botones automáticos
+    function marcarTiempo(tipo) {
+        let ahora = new Date();
+        let tiempoRedondeado = redondearHorario(ahora);
+        
+        if (tipo === 'entrada') {
+            document.getElementById('input-entrada').value = formatearParaInput(tiempoRedondeado);
+        } else {
+            document.getElementById('input-salida').value = formatearParaInput(tiempoRedondeado);
+        }
+    }
+
+    // Esqueleto principal para la lógica dura de horas
+    function calcularYGuardarTurno() {
+        let entradaVal = document.getElementById('input-entrada').value;
+        let salidaVal = document.getElementById('input-salida').value;
+        let esFeriado = document.getElementById('check-feriado').checked;
+
+        if (!entradaVal || !salidaVal) {
+            alert("Por favor, ingresá o marcá la hora de entrada y salida.");
+            return;
+        }
+
+        let fechaEntrada = new Date(entradaVal);
+        let fechaSalida = new Date(salidaVal);
+
+        // --- ACÁ ENTRARÁ LA LÓGICA DE CÁLCULO DE 50%, 100% Y NOCTURNAS ---
+        console.log("Turno procesado:");
+        console.log("Entrada:", fechaEntrada);
+        console.log("Salida:", fechaSalida);
+        console.log("Feriado:", esFeriado);
+        
+        alert("Lógica en construcción. Revisá la consola para ver las fechas redondeadas correctamente.");
+    }
+</script>
+
+</body>
+</html>
