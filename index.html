@@ -79,7 +79,7 @@
         </div>
 
         <button class="btn btn-save" onclick="procesarJornada()">Calcular y Cargar Turno</button>
-        <p class="info-text">* El sistema redondea automáticamente según regla de empresa (bloques de 30 min).</p>
+        <p class="info-text">* Regla: más de 5 min tarde = +30 min. Más de 45 min = +1 hora.</p>
     </div>
 
     <div class="section">
@@ -108,7 +108,6 @@
 </div>
 
 <script>
-    // 1. Configuración Inicial y Año
     const selectYear = document.getElementById('select-year');
     const anioActual = new Date().getFullYear();
     for(let i = anioActual-1; i <= anioActual+1; i++) {
@@ -118,43 +117,50 @@
         selectYear.appendChild(opt);
     }
 
-    // 2. Lógica de Redondeo del Empleador (Cieling 30 min)
-    function redondear(fecha) {
+    // --- LÓGICA DE REDONDEO CORREGIDA (REGLA DE LOS 5 MINUTOS) ---
+    function aplicarReglaRedondeo(fecha) {
         let f = new Date(fecha);
-        let min = f.getMinutes();
-        if (min > 0 && min <= 30) f.setMinutes(30);
-        else if (min > 30) { f.setHours(f.getHours() + 1); f.setMinutes(0); }
+        let minutos = f.getMinutes();
+        let horas = f.getHours();
+
+        if (minutos >= 0 && minutos <= 5) {
+            f.setMinutes(0);
+        } else if (minutos > 5 && minutos <= 35) {
+            f.setMinutes(30);
+        } else if (minutos > 35) {
+            f.setHours(horas + 1);
+            f.setMinutes(0);
+        }
+        
         f.setSeconds(0); f.setMilliseconds(0);
         return f;
     }
 
-    // 3. Botones de Marcación Automática
     function marcar(tipo) {
         let ahora = new Date();
-        let redondeada = redondear(ahora);
-        // Ajuste zona horaria para el input datetime-local
+        let redondeada = aplicarReglaRedondeo(ahora);
         let tzoffset = (new Date()).getTimezoneOffset() * 60000;
         let localISOTime = (new Date(redondeada - tzoffset)).toISOString().slice(0, 16);
         document.getElementById(tipo === 'entrada' ? 'input-entrada' : 'input-salida').value = localISOTime;
     }
 
-    // 4. Lógica de Cálculo de Horas
     function procesarJornada() {
-        const valEntrada = document.getElementById('input-entrada').value;
-        const valSalida = document.getElementById('input-salida').value;
+        // Obtenemos los valores de los inputs. 
+        // Si el usuario escribió a mano, aplicamos el redondeo sobre ese valor antes de calcular.
+        let rawEntrada = new Date(document.getElementById('input-entrada').value);
+        let rawSalida = new Date(document.getElementById('input-salida').value);
         const esFeriado = document.getElementById('check-feriado').checked;
 
-        if(!valEntrada || !valSalida) { alert("Completa los horarios."); return; }
+        if(isNaN(rawEntrada) || isNaN(rawSalida)) { alert("Completa los horarios."); return; }
 
-        let entrada = new Date(valEntrada);
-        let salida = new Date(valSalida);
+        let entrada = aplicarReglaRedondeo(rawEntrada);
+        let salida = aplicarReglaRedondeo(rawSalida);
+
         if(salida <= entrada) { alert("La salida debe ser posterior a la entrada."); return; }
 
-        // Cálculo total
         let totalHoras = (salida - entrada) / (1000 * 60 * 60);
         let horas50 = 0, horas100 = 0, nocturnas = 0, francos = 0;
 
-        // --- CÁLCULO NOCTURNAS (21:00 a 06:00) ---
         let iter = new Date(entrada);
         while(iter < salida) {
             let h = iter.getHours();
@@ -162,15 +168,12 @@
             iter.setMinutes(iter.getMinutes() + 30);
         }
 
-        // --- CLASIFICACIÓN 50% / 100% ---
-        let diaSemana = entrada.getDay(); // 0:Dom, 6:Sab
+        let diaSemana = entrada.getDay(); 
         
         if(diaSemana === 0 || diaSemana === 6 || esFeriado) {
             horas100 = totalHoras;
-            // Regla: Domingo o Feriado genera franco compensatorio
             if(diaSemana === 0 || esFeriado) francos = 1;
         } else {
-            // Lunes a Viernes: 6hs contrato, resto al 50%
             if(totalHoras > 6) horas50 = totalHoras - 6;
         }
 
@@ -184,7 +187,6 @@
             return `${h}:${m.toString().padStart(2, '0')}`;
         };
 
-        // En esta etapa sumamos a lo que ya hay en pantalla (simulando sesión)
         document.getElementById('res-50').innerText = fmt(h50);
         document.getElementById('res-100').innerText = fmt(h100);
         document.getElementById('res-night').innerText = fmt(hn);
@@ -192,7 +194,7 @@
         let actualF = parseInt(document.getElementById('res-francos').innerText);
         document.getElementById('res-francos').innerText = actualF + f;
         
-        alert("Turno calculado con éxito. (Datos temporales hasta vincular Firebase)");
+        alert("Turno procesado aplicando redondeo de empresa.");
     }
 
     function descontarFranco() {
@@ -201,10 +203,9 @@
             document.getElementById('res-francos').innerText = actual - 1;
             alert("Franco compensatorio descontado.");
         } else {
-            alert("No tienes francos disponibles para descontar.");
+            alert("No tienes francos disponibles.");
         }
     }
 </script>
-
 </body>
 </html>
