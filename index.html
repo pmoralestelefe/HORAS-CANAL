@@ -35,6 +35,13 @@
         .btn-save { background-color: #007bff; width: 100%; font-size: 1.1em; }
         .btn:hover { opacity: 0.9; transform: translateY(-1px); }
 
+        /* Historial */
+        .historial-container { margin-top: 20px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; background: white; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #ddd; font-size: 0.9em; }
+        th { background-color: #f1f1f1; color: #333; }
+        tr:hover { background-color: #f9f9f9; }
+
         .info-text { font-size: 0.9em; color: #6c757d; margin-top: 5px; }
     </style>
 </head>
@@ -49,9 +56,9 @@
     </div>
 
     <div class="dashboard">
-        <div class="box box-50"><label>Extras 50%</label><span id="res-50">0:00</span></div>
-        <div class="box box-100"><label>Extras 100%</label><span id="res-100">0:00</span></div>
-        <div class="box box-night"><label>Nocturnas</label><span id="res-night">0:00</span></div>
+        <div class="box box-50"><label>Extras 50% Totales</label><span id="res-50">0:00</span></div>
+        <div class="box box-100"><label>Extras 100% Totales</label><span id="res-100">0:00</span></div>
+        <div class="box box-night"><label>Nocturnas Totales</label><span id="res-night">0:00</span></div>
         <div class="box box-francos"><label>Compensatorios</label><span id="res-francos">0</span></div>
     </div>
 
@@ -79,7 +86,27 @@
         </div>
 
         <button class="btn btn-save" onclick="procesarJornada()">Calcular y Cargar Turno</button>
-        <p class="info-text">* Regla: más de 5 min tarde = +30 min. Más de 45 min = +1 hora.</p>
+    </div>
+
+    <div class="section">
+        <h3>Detalle de Turnos Cargados</h3>
+        <div class="historial-container">
+            <table id="tabla-historial">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Entrada</th>
+                        <th>Salida</th>
+                        <th>50%</th>
+                        <th>100%</th>
+                        <th>Noct.</th>
+                        <th>Franco</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    </tbody>
+            </table>
+        </div>
     </div>
 
     <div class="section">
@@ -94,20 +121,13 @@
                 <input type="number" id="vacaciones-restantes" value="21" readonly style="background:#eee;">
             </div>
         </div>
-        <div class="grid-inputs">
-            <div>
-                <label>Inicio Vacaciones</label>
-                <input type="date" id="vac-inicio">
-            </div>
-            <div>
-                <label>Fin Vacaciones</label>
-                <input type="date" id="vac-fin">
-            </div>
-        </div>
     </div>
 </div>
 
 <script>
+    // LISTA PARA GUARDAR LOS TURNOS (MEMORIA VOLATIL HASTA FIREBASE)
+    let listadoTurnos = [];
+
     const selectYear = document.getElementById('select-year');
     const anioActual = new Date().getFullYear();
     for(let i = anioActual-1; i <= anioActual+1; i++) {
@@ -117,21 +137,13 @@
         selectYear.appendChild(opt);
     }
 
-    // --- LÓGICA DE REDONDEO CORREGIDA (REGLA DE LOS 5 MINUTOS) ---
     function aplicarReglaRedondeo(fecha) {
         let f = new Date(fecha);
         let minutos = f.getMinutes();
         let horas = f.getHours();
-
-        if (minutos >= 0 && minutos <= 5) {
-            f.setMinutes(0);
-        } else if (minutos > 5 && minutos <= 35) {
-            f.setMinutes(30);
-        } else if (minutos > 35) {
-            f.setHours(horas + 1);
-            f.setMinutes(0);
-        }
-        
+        if (minutos >= 0 && minutos <= 5) f.setMinutes(0);
+        else if (minutos > 5 && minutos <= 35) f.setMinutes(30);
+        else if (minutos > 35) { f.setHours(horas + 1); f.setMinutes(0); }
         f.setSeconds(0); f.setMilliseconds(0);
         return f;
     }
@@ -145,8 +157,6 @@
     }
 
     function procesarJornada() {
-        // Obtenemos los valores de los inputs. 
-        // Si el usuario escribió a mano, aplicamos el redondeo sobre ese valor antes de calcular.
         let rawEntrada = new Date(document.getElementById('input-entrada').value);
         let rawSalida = new Date(document.getElementById('input-salida').value);
         const esFeriado = document.getElementById('check-feriado').checked;
@@ -169,7 +179,6 @@
         }
 
         let diaSemana = entrada.getDay(); 
-        
         if(diaSemana === 0 || diaSemana === 6 || esFeriado) {
             horas100 = totalHoras;
             if(diaSemana === 0 || esFeriado) francos = 1;
@@ -177,33 +186,62 @@
             if(totalHoras > 6) horas50 = totalHoras - 6;
         }
 
-        actualizarDashboard(horas50, horas100, nocturnas, francos);
-    }
-
-    function actualizarDashboard(h50, h100, hn, f) {
-        const fmt = (num) => {
-            let h = Math.floor(num);
-            let m = Math.round((num - h) * 60);
-            return `${h}:${m.toString().padStart(2, '0')}`;
+        // AGREGAR AL LISTADO
+        const nuevoTurno = {
+            fecha: entrada.toLocaleDateString(),
+            entrada: entrada.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+            salida: salida.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+            h50: horas50,
+            h100: horas100,
+            hn: nocturnas,
+            f: francos
         };
 
-        document.getElementById('res-50').innerText = fmt(h50);
-        document.getElementById('res-100').innerText = fmt(h100);
-        document.getElementById('res-night').innerText = fmt(hn);
-        
-        let actualF = parseInt(document.getElementById('res-francos').innerText);
-        document.getElementById('res-francos').innerText = actualF + f;
-        
-        alert("Turno procesado aplicando redondeo de empresa.");
+        listadoTurnos.push(nuevoTurno);
+        actualizarTodo();
+    }
+
+    function actualizarTodo() {
+        let total50 = 0, total100 = 0, totalNoct = 0, totalFrancos = 0;
+        const tbody = document.querySelector("#tabla-historial tbody");
+        tbody.innerHTML = ""; // Limpiar tabla
+
+        listadoTurnos.forEach(t => {
+            total50 += t.h50;
+            total100 += t.h100;
+            totalNoct += t.hn;
+            totalFrancos += t.f;
+
+            // Agregar fila a la tabla
+            let fila = `<tr>
+                <td>${t.fecha}</td>
+                <td>${t.entrada}</td>
+                <td>${t.salida}</td>
+                <td>${fmt(t.h50)}</td>
+                <td>${fmt(t.h100)}</td>
+                <td>${fmt(t.hn)}</td>
+                <td>${t.f}</td>
+            </tr>`;
+            tbody.innerHTML += fila;
+        });
+
+        document.getElementById('res-50').innerText = fmt(total50);
+        document.getElementById('res-100').innerText = fmt(total100);
+        document.getElementById('res-night').innerText = fmt(totalNoct);
+        document.getElementById('res-francos').innerText = totalFrancos;
+    }
+
+    function fmt(num) {
+        let h = Math.floor(num);
+        let m = Math.round((num - h) * 60);
+        return `${h}:${m.toString().padStart(2, '0')}`;
     }
 
     function descontarFranco() {
+        // Lógica simple para descontar de la vista actual
         let actual = parseInt(document.getElementById('res-francos').innerText);
         if(actual > 0) {
             document.getElementById('res-francos').innerText = actual - 1;
-            alert("Franco compensatorio descontado.");
-        } else {
-            alert("No tienes francos disponibles.");
         }
     }
 </script>
