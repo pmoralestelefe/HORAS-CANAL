@@ -185,7 +185,6 @@
     }
 
     function procesarJornada() {
-        // Guardamos el string original para poder editarlo después
         let rawEntradaStr = document.getElementById('input-entrada').value;
         let rawSalidaStr = document.getElementById('input-salida').value;
         const esFeriado = document.getElementById('check-feriado').checked;
@@ -211,17 +210,53 @@
         }
 
         let diaSemana = entrada.getDay(); 
-        if(diaSemana === 0 || diaSemana === 6 || esFeriado) {
+        let trabajoSabadoPrevio = false;
+
+        // Comprobar si trabajó el sábado previo (para la regla del domingo)
+        if (diaSemana === 0) {
+            let fechaSabadoPrevio = new Date(entrada);
+            fechaSabadoPrevio.setDate(fechaSabadoPrevio.getDate() - 1);
+            let fechaSabadoStr = fechaSabadoPrevio.toLocaleDateString();
+            
+            // Busca en el listado si hay un turno cargado con la fecha del sábado anterior (excluyendo el actual si se edita)
+            trabajoSabadoPrevio = listadoTurnos.some((t, idx) => t.fecha === fechaSabadoStr && idx !== indexEdicion);
+        }
+
+        if (esFeriado) {
             horas100 = totalHoras;
-            if(diaSemana === 0 || esFeriado) francos = 1;
-        } else {
+            francos = 1;
+        } else if (diaSemana === 0) { // DOMINGO
+            if (trabajoSabadoPrevio) {
+                // Si trabajó el sábado, el domingo es al 100% y genera franco
+                horas100 = totalHoras;
+                francos = 1;
+            } else {
+                // Si no trabajó el sábado, el domingo es "normal"
+                if (totalHoras > 6) horas50 = totalHoras - 6;
+            }
+        } else if (diaSemana === 6) { // SÁBADO
+            let horasAntes13 = 0;
+            let iterSabado = new Date(entrada);
+            while(iterSabado < salida) {
+                if(iterSabado.getHours() >= 13) {
+                    horas100 += 0.5; // Después de las 13:00hs al 100%
+                } else {
+                    horasAntes13 += 0.5; // Antes de las 13:00hs es normal
+                }
+                iterSabado.setMinutes(iterSabado.getMinutes() + 30);
+            }
+            // Si antes de las 13 hs superó las 6 horas, van al 50%
+            if (horasAntes13 > 6) {
+                horas50 = horasAntes13 - 6;
+            }
+        } else { // LUNES A VIERNES
             if(totalHoras > 6) horas50 = totalHoras - 6;
         }
 
         const nuevoTurno = {
-            rawEntrada: rawEntradaStr, // Lo guardamos para la edición
-            rawSalida: rawSalidaStr,   // Lo guardamos para la edición
-            esFeriado: esFeriado,      // Lo guardamos para la edición
+            rawEntrada: rawEntradaStr, 
+            rawSalida: rawSalidaStr,   
+            esFeriado: esFeriado,      
             fecha: entrada.toLocaleDateString(),
             entrada: entrada.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
             salida: salida.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
@@ -231,18 +266,15 @@
             f: francos
         };
 
-        // Si estamos editando un turno existente, lo reemplazamos
         if (indexEdicion >= 0) {
             listadoTurnos[indexEdicion] = nuevoTurno;
-            indexEdicion = -1; // Reseteamos el estado de edición
+            indexEdicion = -1; 
             document.getElementById('btn-procesar').innerText = "Calcular y Cargar Turno";
             document.getElementById('btn-procesar').style.backgroundColor = "#007bff";
         } else {
-            // Si es nuevo, lo agregamos al final
             listadoTurnos.push(nuevoTurno);
         }
         
-        // Limpiar inputs
         document.getElementById('input-entrada').value = '';
         document.getElementById('input-salida').value = '';
         document.getElementById('check-feriado').checked = false;
@@ -253,26 +285,23 @@
     function editarTurno(index) {
         let turno = listadoTurnos[index];
         
-        // Cargar datos en los inputs
         document.getElementById('input-entrada').value = turno.rawEntrada;
         document.getElementById('input-salida').value = turno.rawSalida;
         document.getElementById('check-feriado').checked = turno.esFeriado;
         
-        indexEdicion = index; // Guardamos qué índice estamos editando
+        indexEdicion = index; 
 
-        // Cambiamos el estilo del botón para que sea evidente que estamos editando
         let btn = document.getElementById('btn-procesar');
         btn.innerText = "Actualizar Turno";
         btn.style.backgroundColor = "#28a745";
         
-        window.scrollTo({ top: 0, behavior: 'smooth' }); // Subir al formulario
+        window.scrollTo({ top: 0, behavior: 'smooth' }); 
     }
 
     function eliminarTurno(index) {
         if(confirm("¿Estás seguro de que quieres eliminar este turno?")) {
             listadoTurnos.splice(index, 1);
             
-            // Si estaba editando justo el que borró, reseteamos el form
             if(indexEdicion === index) {
                 indexEdicion = -1;
                 document.getElementById('btn-procesar').innerText = "Calcular y Cargar Turno";
@@ -316,7 +345,6 @@
         document.getElementById('res-100').innerText = fmt(total100);
         document.getElementById('res-night').innerText = fmt(totalNoct);
         
-        // Calcular francos disponibles: Ganados - Usados
         let francosDisponibles = francosGanados - francosUsados.length;
         document.getElementById('res-francos').innerText = francosDisponibles;
     }
@@ -339,15 +367,14 @@
             return;
         }
 
-        // Convertir formato de fecha para mostrarlo bonito (opcional)
         let fechaObj = new Date(fecha + "T00:00:00");
         let fechaStr = fechaObj.toLocaleDateString();
 
         francosUsados.push(fechaStr);
-        document.getElementById('fecha-uso-franco').value = ''; // Limpiar input
+        document.getElementById('fecha-uso-franco').value = ''; 
         
         actualizarListas();
-        actualizarTodo(); // Para refrescar el número del dashboard
+        actualizarTodo(); 
     }
 
     function eliminarFranco(index) {
@@ -367,7 +394,6 @@
 
         if(fechaHasta < fechaDesde) { alert("La fecha 'Hasta' debe ser posterior a 'Desde'."); return; }
 
-        // Calcular días (sumamos 1 para que sea inclusivo)
         let diffTiempo = Math.abs(fechaHasta - fechaDesde);
         let diasTomados = Math.ceil(diffTiempo / (1000 * 60 * 60 * 24)) + 1;
 
@@ -389,7 +415,6 @@
     }
 
     function actualizarListas() {
-        // --- Actualizar lista de Francos ---
         let ulFrancos = document.getElementById('lista-francos');
         ulFrancos.innerHTML = '';
         francosUsados.forEach((fecha, index) => {
@@ -397,7 +422,6 @@
                 <button class="btn-sm btn-delete" onclick="eliminarFranco(${index})">Deshacer</button></li>`;
         });
 
-        // --- Actualizar lista de Vacaciones ---
         let ulVacaciones = document.getElementById('lista-vacaciones');
         ulVacaciones.innerHTML = '';
         let totalDiasUsados = 0;
@@ -408,7 +432,6 @@
                 <button class="btn-sm btn-delete" onclick="eliminarVacaciones(${index})">X</button></li>`;
         });
 
-        // --- Actualizar días restantes ---
         let diasRestantes = totalVacacionesAnuales - totalDiasUsados;
         document.getElementById('vacaciones-restantes').innerText = diasRestantes;
     }
