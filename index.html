@@ -34,6 +34,11 @@
         .btn-out { background-color: #fd7e14; }
         .btn-save { background-color: #007bff; width: 100%; font-size: 1.1em; }
         .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+        
+        /* Botones pequeños para la tabla */
+        .btn-sm { padding: 6px 10px; font-size: 0.8em; margin-right: 5px; border: none; border-radius: 4px; cursor: pointer; color: white; }
+        .btn-edit { background-color: #f1c40f; color: #333; font-weight: bold; }
+        .btn-delete { background-color: #e74c3c; font-weight: bold; }
 
         /* Historial */
         .historial-container { margin-top: 20px; overflow-x: auto; }
@@ -43,6 +48,10 @@
         tr:hover { background-color: #f9f9f9; }
 
         .info-text { font-size: 0.9em; color: #6c757d; margin-top: 5px; }
+        
+        /* Listas de historial Francos/Vacaciones */
+        .lista-historial { list-style-type: none; padding: 0; margin-top: 10px; font-size: 0.9em; color: #555; }
+        .lista-historial li { background: #fff; padding: 8px; margin-bottom: 5px; border-radius: 4px; border: 1px solid #ddd; display: flex; justify-content: space-between; }
     </style>
 </head>
 <body>
@@ -59,7 +68,7 @@
         <div class="box box-50"><label>Extras 50% Totales</label><span id="res-50">0:00</span></div>
         <div class="box box-100"><label>Extras 100% Totales</label><span id="res-100">0:00</span></div>
         <div class="box box-night"><label>Nocturnas Totales</label><span id="res-night">0:00</span></div>
-        <div class="box box-francos"><label>Compensatorios</label><span id="res-francos">0</span></div>
+        <div class="box box-francos"><label>Compensatorios Disponibles</label><span id="res-francos">0</span></div>
     </div>
 
     <div class="section">
@@ -85,7 +94,7 @@
             <label for="check-feriado" style="margin:0;">¿Es día Feriado?</label>
         </div>
 
-        <button class="btn btn-save" onclick="procesarJornada()">Calcular y Cargar Turno</button>
+        <button id="btn-procesar" class="btn btn-save" onclick="procesarJornada()">Calcular y Cargar Turno</button>
     </div>
 
     <div class="section">
@@ -101,10 +110,11 @@
                         <th>100%</th>
                         <th>Noct.</th>
                         <th>Franco</th>
+                        <th>Acciones</th>
                     </tr>
                 </thead>
                 <tbody>
-                    </tbody>
+                </tbody>
             </table>
         </div>
     </div>
@@ -114,19 +124,37 @@
         <div class="grid-inputs">
             <div>
                 <label>Usar Franco (Fecha)</label>
-                <input type="date" id="fecha-uso-franco" onchange="descontarFranco()">
+                <div style="display: flex; gap: 10px;">
+                    <input type="date" id="fecha-uso-franco">
+                    <button class="btn btn-out" style="flex: 0.5;" onclick="registrarUsoFranco()">Descontar</button>
+                </div>
+                <ul id="lista-francos" class="lista-historial"></ul>
             </div>
+            
             <div>
-                <label>Vacaciones Restantes</label>
-                <input type="number" id="vacaciones-restantes" value="21" readonly style="background:#eee;">
+                <label>Vacaciones (Desde - Hasta)</label>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <input type="date" id="vacaciones-desde" title="Desde">
+                    <input type="date" id="vacaciones-hasta" title="Hasta">
+                </div>
+                <button class="btn btn-save" style="font-size: 1em; padding: 10px;" onclick="registrarVacaciones()">Registrar Vacaciones</button>
+                
+                <div style="margin-top: 15px; padding: 10px; background: #e9ecef; border-radius: 6px;">
+                    <strong>Vacaciones Restantes: </strong> <span id="vacaciones-restantes" style="font-size: 1.2em; color: #d35400; font-weight: bold;">21</span> días
+                </div>
+                <ul id="lista-vacaciones" class="lista-historial"></ul>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-    // LISTA PARA GUARDAR LOS TURNOS (MEMORIA VOLATIL HASTA FIREBASE)
+    // MEMORIA VOLÁTIL
     let listadoTurnos = [];
+    let francosUsados = [];
+    let vacacionesTomadas = [];
+    let totalVacacionesAnuales = 21;
+    let indexEdicion = -1; // -1 significa que estamos creando un turno nuevo
 
     const selectYear = document.getElementById('select-year');
     const anioActual = new Date().getFullYear();
@@ -157,9 +185,13 @@
     }
 
     function procesarJornada() {
-        let rawEntrada = new Date(document.getElementById('input-entrada').value);
-        let rawSalida = new Date(document.getElementById('input-salida').value);
+        // Guardamos el string original para poder editarlo después
+        let rawEntradaStr = document.getElementById('input-entrada').value;
+        let rawSalidaStr = document.getElementById('input-salida').value;
         const esFeriado = document.getElementById('check-feriado').checked;
+
+        let rawEntrada = new Date(rawEntradaStr);
+        let rawSalida = new Date(rawSalidaStr);
 
         if(isNaN(rawEntrada) || isNaN(rawSalida)) { alert("Completa los horarios."); return; }
 
@@ -186,8 +218,10 @@
             if(totalHoras > 6) horas50 = totalHoras - 6;
         }
 
-        // AGREGAR AL LISTADO
         const nuevoTurno = {
+            rawEntrada: rawEntradaStr, // Lo guardamos para la edición
+            rawSalida: rawSalidaStr,   // Lo guardamos para la edición
+            esFeriado: esFeriado,      // Lo guardamos para la edición
             fecha: entrada.toLocaleDateString(),
             entrada: entrada.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
             salida: salida.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
@@ -197,22 +231,71 @@
             f: francos
         };
 
-        listadoTurnos.push(nuevoTurno);
+        // Si estamos editando un turno existente, lo reemplazamos
+        if (indexEdicion >= 0) {
+            listadoTurnos[indexEdicion] = nuevoTurno;
+            indexEdicion = -1; // Reseteamos el estado de edición
+            document.getElementById('btn-procesar').innerText = "Calcular y Cargar Turno";
+            document.getElementById('btn-procesar').style.backgroundColor = "#007bff";
+        } else {
+            // Si es nuevo, lo agregamos al final
+            listadoTurnos.push(nuevoTurno);
+        }
+        
+        // Limpiar inputs
+        document.getElementById('input-entrada').value = '';
+        document.getElementById('input-salida').value = '';
+        document.getElementById('check-feriado').checked = false;
+
         actualizarTodo();
     }
 
-    function actualizarTodo() {
-        let total50 = 0, total100 = 0, totalNoct = 0, totalFrancos = 0;
-        const tbody = document.querySelector("#tabla-historial tbody");
-        tbody.innerHTML = ""; // Limpiar tabla
+    function editarTurno(index) {
+        let turno = listadoTurnos[index];
+        
+        // Cargar datos en los inputs
+        document.getElementById('input-entrada').value = turno.rawEntrada;
+        document.getElementById('input-salida').value = turno.rawSalida;
+        document.getElementById('check-feriado').checked = turno.esFeriado;
+        
+        indexEdicion = index; // Guardamos qué índice estamos editando
 
-        listadoTurnos.forEach(t => {
+        // Cambiamos el estilo del botón para que sea evidente que estamos editando
+        let btn = document.getElementById('btn-procesar');
+        btn.innerText = "Actualizar Turno";
+        btn.style.backgroundColor = "#28a745";
+        
+        window.scrollTo({ top: 0, behavior: 'smooth' }); // Subir al formulario
+    }
+
+    function eliminarTurno(index) {
+        if(confirm("¿Estás seguro de que quieres eliminar este turno?")) {
+            listadoTurnos.splice(index, 1);
+            
+            // Si estaba editando justo el que borró, reseteamos el form
+            if(indexEdicion === index) {
+                indexEdicion = -1;
+                document.getElementById('btn-procesar').innerText = "Calcular y Cargar Turno";
+                document.getElementById('btn-procesar').style.backgroundColor = "#007bff";
+                document.getElementById('input-entrada').value = '';
+                document.getElementById('input-salida').value = '';
+                document.getElementById('check-feriado').checked = false;
+            }
+            actualizarTodo();
+        }
+    }
+
+    function actualizarTodo() {
+        let total50 = 0, total100 = 0, totalNoct = 0, francosGanados = 0;
+        const tbody = document.querySelector("#tabla-historial tbody");
+        tbody.innerHTML = ""; 
+
+        listadoTurnos.forEach((t, index) => {
             total50 += t.h50;
             total100 += t.h100;
             totalNoct += t.hn;
-            totalFrancos += t.f;
+            francosGanados += t.f;
 
-            // Agregar fila a la tabla
             let fila = `<tr>
                 <td>${t.fecha}</td>
                 <td>${t.entrada}</td>
@@ -221,6 +304,10 @@
                 <td>${fmt(t.h100)}</td>
                 <td>${fmt(t.hn)}</td>
                 <td>${t.f}</td>
+                <td>
+                    <button class="btn-sm btn-edit" onclick="editarTurno(${index})">Editar</button>
+                    <button class="btn-sm btn-delete" onclick="eliminarTurno(${index})">X</button>
+                </td>
             </tr>`;
             tbody.innerHTML += fila;
         });
@@ -228,7 +315,10 @@
         document.getElementById('res-50').innerText = fmt(total50);
         document.getElementById('res-100').innerText = fmt(total100);
         document.getElementById('res-night').innerText = fmt(totalNoct);
-        document.getElementById('res-francos').innerText = totalFrancos;
+        
+        // Calcular francos disponibles: Ganados - Usados
+        let francosDisponibles = francosGanados - francosUsados.length;
+        document.getElementById('res-francos').innerText = francosDisponibles;
     }
 
     function fmt(num) {
@@ -237,12 +327,90 @@
         return `${h}:${m.toString().padStart(2, '0')}`;
     }
 
-    function descontarFranco() {
-        // Lógica simple para descontar de la vista actual
-        let actual = parseInt(document.getElementById('res-francos').innerText);
-        if(actual > 0) {
-            document.getElementById('res-francos').innerText = actual - 1;
+    /* ---------------- LÓGICA DE FRANCOS Y VACACIONES ---------------- */
+
+    function registrarUsoFranco() {
+        let fecha = document.getElementById('fecha-uso-franco').value;
+        if(!fecha) { alert("Por favor, selecciona una fecha para el franco."); return; }
+        
+        let francosDisponibles = parseInt(document.getElementById('res-francos').innerText);
+        if(francosDisponibles <= 0) {
+            alert("No tienes francos compensatorios disponibles para descontar.");
+            return;
         }
+
+        // Convertir formato de fecha para mostrarlo bonito (opcional)
+        let fechaObj = new Date(fecha + "T00:00:00");
+        let fechaStr = fechaObj.toLocaleDateString();
+
+        francosUsados.push(fechaStr);
+        document.getElementById('fecha-uso-franco').value = ''; // Limpiar input
+        
+        actualizarListas();
+        actualizarTodo(); // Para refrescar el número del dashboard
+    }
+
+    function eliminarFranco(index) {
+        francosUsados.splice(index, 1);
+        actualizarListas();
+        actualizarTodo();
+    }
+
+    function registrarVacaciones() {
+        let desde = document.getElementById('vacaciones-desde').value;
+        let hasta = document.getElementById('vacaciones-hasta').value;
+
+        if(!desde || !hasta) { alert("Por favor, selecciona fecha de inicio y fin."); return; }
+        
+        let fechaDesde = new Date(desde + "T00:00:00");
+        let fechaHasta = new Date(hasta + "T00:00:00");
+
+        if(fechaHasta < fechaDesde) { alert("La fecha 'Hasta' debe ser posterior a 'Desde'."); return; }
+
+        // Calcular días (sumamos 1 para que sea inclusivo)
+        let diffTiempo = Math.abs(fechaHasta - fechaDesde);
+        let diasTomados = Math.ceil(diffTiempo / (1000 * 60 * 60 * 24)) + 1;
+
+        vacacionesTomadas.push({
+            desdeStr: fechaDesde.toLocaleDateString(),
+            hastaStr: fechaHasta.toLocaleDateString(),
+            dias: diasTomados
+        });
+
+        document.getElementById('vacaciones-desde').value = '';
+        document.getElementById('vacaciones-hasta').value = '';
+
+        actualizarListas();
+    }
+
+    function eliminarVacaciones(index) {
+        vacacionesTomadas.splice(index, 1);
+        actualizarListas();
+    }
+
+    function actualizarListas() {
+        // --- Actualizar lista de Francos ---
+        let ulFrancos = document.getElementById('lista-francos');
+        ulFrancos.innerHTML = '';
+        francosUsados.forEach((fecha, index) => {
+            ulFrancos.innerHTML += `<li>Franco usado el: ${fecha} 
+                <button class="btn-sm btn-delete" onclick="eliminarFranco(${index})">Deshacer</button></li>`;
+        });
+
+        // --- Actualizar lista de Vacaciones ---
+        let ulVacaciones = document.getElementById('lista-vacaciones');
+        ulVacaciones.innerHTML = '';
+        let totalDiasUsados = 0;
+
+        vacacionesTomadas.forEach((v, index) => {
+            totalDiasUsados += v.dias;
+            ulVacaciones.innerHTML += `<li>Del ${v.desdeStr} al ${v.hastaStr} (${v.dias} días)
+                <button class="btn-sm btn-delete" onclick="eliminarVacaciones(${index})">X</button></li>`;
+        });
+
+        // --- Actualizar días restantes ---
+        let diasRestantes = totalVacacionesAnuales - totalDiasUsados;
+        document.getElementById('vacaciones-restantes').innerText = diasRestantes;
     }
 </script>
 </body>
