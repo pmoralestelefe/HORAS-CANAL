@@ -148,14 +148,34 @@
     </div>
 </div>
 
-<script>
-    // MEMORIA VOLÁTIL
+<script type="module">
+    // --- INTEGRACIÓN DE FIREBASE ---
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyBBaYb33EUlfTijKo0gzSL1QWH4sJTKb2A",
+        authDomain: "horas-trabajadas-ba84c.firebaseapp.com",
+        projectId: "horas-trabajadas-ba84c",
+        storageBucket: "horas-trabajadas-ba84c.firebasestorage.app",
+        messagingSenderId: "196282015917",
+        appId: "1:196282015917:web:f768c69505b662f402e624"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const turnosRef = collection(db, "turnos");
+    const francosRef = collection(db, "francosUsados");
+    const vacRef = collection(db, "vacaciones");
+
+    // VARIABLES GLOBALES (Ahora sincronizadas con Firebase)
     let listadoTurnos = [];
     let francosUsados = [];
     let vacacionesTomadas = [];
     let totalVacacionesAnuales = 21;
-    let indexEdicion = -1; // -1 significa que estamos creando un turno nuevo
+    let idEdicion = null; 
 
+    // --- TU LÓGICA ORIGINAL (Mantenida intacta) ---
     const selectYear = document.getElementById('select-year');
     const anioActual = new Date().getFullYear();
     for(let i = anioActual-1; i <= anioActual+1; i++) {
@@ -165,7 +185,7 @@
         selectYear.appendChild(opt);
     }
 
-    function aplicarReglaRedondeo(fecha) {
+    window.aplicarReglaRedondeo = function(fecha) {
         let f = new Date(fecha);
         let minutos = f.getMinutes();
         let horas = f.getHours();
@@ -176,7 +196,7 @@
         return f;
     }
 
-    function marcar(tipo) {
+    window.marcar = function(tipo) {
         let ahora = new Date();
         let redondeada = aplicarReglaRedondeo(ahora);
         let tzoffset = (new Date()).getTimezoneOffset() * 60000;
@@ -184,7 +204,7 @@
         document.getElementById(tipo === 'entrada' ? 'input-entrada' : 'input-salida').value = localISOTime;
     }
 
-    function procesarJornada() {
+    window.procesarJornada = async function() {
         let rawEntradaStr = document.getElementById('input-entrada').value;
         let rawSalidaStr = document.getElementById('input-salida').value;
         const esFeriado = document.getElementById('check-feriado').checked;
@@ -212,50 +232,43 @@
         let diaSemana = entrada.getDay(); 
         let trabajoSabadoPrevio = false;
 
-        // Comprobar si trabajó el sábado previo (para la regla del domingo)
         if (diaSemana === 0) {
             let fechaSabadoPrevio = new Date(entrada);
             fechaSabadoPrevio.setDate(fechaSabadoPrevio.getDate() - 1);
             let fechaSabadoStr = fechaSabadoPrevio.toLocaleDateString();
-            
-            // Busca en el listado si hay un turno cargado con la fecha del sábado anterior (excluyendo el actual si se edita)
-            trabajoSabadoPrevio = listadoTurnos.some((t, idx) => t.fecha === fechaSabadoStr && idx !== indexEdicion);
+            trabajoSabadoPrevio = listadoTurnos.some((t) => t.fecha === fechaSabadoStr && t.id !== idEdicion);
         }
 
         if (esFeriado) {
             horas100 = totalHoras;
             francos = 1;
-        } else if (diaSemana === 0) { // DOMINGO
+        } else if (diaSemana === 0) { 
             if (trabajoSabadoPrevio) {
-                // Si trabajó el sábado, el domingo es al 100% y genera franco
                 horas100 = totalHoras;
                 francos = 1;
             } else {
-                // Si no trabajó el sábado, el domingo es "normal"
                 if (totalHoras > 6) horas50 = totalHoras - 6;
             }
-        } else if (diaSemana === 6) { // SÁBADO
+        } else if (diaSemana === 6) { 
             let horasTrabajadas = 0;
             let iterSabado = new Date(entrada);
             while(iterSabado < salida) {
                 if (horasTrabajadas < 6) {
-                    // Dentro de las 6 horas de contrato (no es extra)
                     horasTrabajadas += 0.5;
                 } else {
-                    // Ya superó las 6 horas de contrato (horas extras)
                     if(iterSabado.getHours() >= 13) {
-                        horas100 += 0.5; // Extras después de las 13:00hs al 100%
+                        horas100 += 0.5;
                     } else {
-                        horas50 += 0.5; // Extras antes de las 13:00hs al 50%
+                        horas50 += 0.5;
                     }
                 }
                 iterSabado.setMinutes(iterSabado.getMinutes() + 30);
             }
-        } else { // LUNES A VIERNES
+        } else { 
             if(totalHoras > 6) horas50 = totalHoras - 6;
         }
 
-        const nuevoTurno = {
+        const datosTurno = {
             rawEntrada: rawEntradaStr, 
             rawSalida: rawSalidaStr,   
             esFeriado: esFeriado,      
@@ -265,63 +278,75 @@
             h50: horas50,
             h100: horas100,
             hn: nocturnas,
-            f: francos
+            f: francos,
+            timestamp: Date.now()
         };
 
-        if (indexEdicion >= 0) {
-            listadoTurnos[indexEdicion] = nuevoTurno;
-            indexEdicion = -1; 
-            document.getElementById('btn-procesar').innerText = "Calcular y Cargar Turno";
-            document.getElementById('btn-procesar').style.backgroundColor = "#007bff";
-        } else {
-            listadoTurnos.push(nuevoTurno);
+        // ACCIÓN FIREBASE: Guardar o Actualizar
+        try {
+            if (idEdicion) {
+                await updateDoc(doc(db, "turnos", idEdicion), datosTurno);
+                idEdicion = null;
+                document.getElementById('btn-procesar').innerText = "Calcular y Cargar Turno";
+                document.getElementById('btn-procesar').style.backgroundColor = "#007bff";
+            } else {
+                await addDoc(turnosRef, datosTurno);
+            }
+            
+            document.getElementById('input-entrada').value = '';
+            document.getElementById('input-salida').value = '';
+            document.getElementById('check-feriado').checked = false;
+        } catch (e) {
+            alert("Error en Firebase: " + e.message);
         }
-        
-        document.getElementById('input-entrada').value = '';
-        document.getElementById('input-salida').value = '';
-        document.getElementById('check-feriado').checked = false;
-
-        actualizarTodo();
     }
 
-    function editarTurno(index) {
-        let turno = listadoTurnos[index];
-        
+    window.editarTurno = function(id) {
+        let turno = listadoTurnos.find(t => t.id === id);
         document.getElementById('input-entrada').value = turno.rawEntrada;
         document.getElementById('input-salida').value = turno.rawSalida;
         document.getElementById('check-feriado').checked = turno.esFeriado;
-        
-        indexEdicion = index; 
-
+        idEdicion = id; 
         let btn = document.getElementById('btn-procesar');
         btn.innerText = "Actualizar Turno";
         btn.style.backgroundColor = "#28a745";
-        
         window.scrollTo({ top: 0, behavior: 'smooth' }); 
     }
 
-    function eliminarTurno(index) {
-        if(confirm("¿Estás seguro de que quieres eliminar este turno?")) {
-            listadoTurnos.splice(index, 1);
-            
-            if(indexEdicion === index) {
-                indexEdicion = -1;
+    window.eliminarTurno = async function(id) {
+        if(confirm("¿Estás seguro?")) {
+            await deleteDoc(doc(db, "turnos", id));
+            if(idEdicion === id) {
+                idEdicion = null;
                 document.getElementById('btn-procesar').innerText = "Calcular y Cargar Turno";
                 document.getElementById('btn-procesar').style.backgroundColor = "#007bff";
-                document.getElementById('input-entrada').value = '';
-                document.getElementById('input-salida').value = '';
-                document.getElementById('check-feriado').checked = false;
             }
-            actualizarTodo();
         }
     }
 
-    function actualizarTodo() {
+    // --- ESCUCHA DE DATOS EN TIEMPO REAL ---
+    onSnapshot(query(turnosRef, orderBy("timestamp", "desc")), (snapshot) => {
+        listadoTurnos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        actualizarTodo();
+    });
+
+    onSnapshot(francosRef, (snapshot) => {
+        francosUsados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        actualizarListas();
+        actualizarTodo();
+    });
+
+    onSnapshot(vacRef, (snapshot) => {
+        vacacionesTomadas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        actualizarListas();
+    });
+
+    window.actualizarTodo = function() {
         let total50 = 0, total100 = 0, totalNoct = 0, francosGanados = 0;
         const tbody = document.querySelector("#tabla-historial tbody");
         tbody.innerHTML = ""; 
 
-        listadoTurnos.forEach((t, index) => {
+        listadoTurnos.forEach((t) => {
             total50 += t.h50;
             total100 += t.h100;
             totalNoct += t.hn;
@@ -336,8 +361,8 @@
                 <td>${fmt(t.hn)}</td>
                 <td>${t.f}</td>
                 <td>
-                    <button class="btn-sm btn-edit" onclick="editarTurno(${index})">Editar</button>
-                    <button class="btn-sm btn-delete" onclick="eliminarTurno(${index})">X</button>
+                    <button class="btn-sm btn-edit" onclick="editarTurno('${t.id}')">Editar</button>
+                    <button class="btn-sm btn-delete" onclick="eliminarTurno('${t.id}')">X</button>
                 </td>
             </tr>`;
             tbody.innerHTML += fila;
@@ -357,85 +382,64 @@
         return `${h}:${m.toString().padStart(2, '0')}`;
     }
 
-    /* ---------------- LÓGICA DE FRANCOS Y VACACIONES ---------------- */
-
-    function registrarUsoFranco() {
+    // --- LÓGICA DE FRANCOS Y VACACIONES SINCRONIZADA ---
+    window.registrarUsoFranco = async function() {
         let fecha = document.getElementById('fecha-uso-franco').value;
-        if(!fecha) { alert("Por favor, selecciona una fecha para el franco."); return; }
-        
+        if(!fecha) return;
         let francosDisponibles = parseInt(document.getElementById('res-francos').innerText);
-        if(francosDisponibles <= 0) {
-            alert("No tienes francos compensatorios disponibles para descontar.");
-            return;
-        }
+        if(francosDisponibles <= 0) { alert("No tienes francos."); return; }
 
         let fechaObj = new Date(fecha + "T00:00:00");
-        let fechaStr = fechaObj.toLocaleDateString();
-
-        francosUsados.push(fechaStr);
+        await addDoc(francosRef, { fechaStr: fechaObj.toLocaleDateString() });
         document.getElementById('fecha-uso-franco').value = ''; 
-        
-        actualizarListas();
-        actualizarTodo(); 
     }
 
-    function eliminarFranco(index) {
-        francosUsados.splice(index, 1);
-        actualizarListas();
-        actualizarTodo();
+    window.eliminarFranco = async function(id) {
+        await deleteDoc(doc(db, "francosUsados", id));
     }
 
-    function registrarVacaciones() {
+    window.registrarVacaciones = async function() {
         let desde = document.getElementById('vacaciones-desde').value;
         let hasta = document.getElementById('vacaciones-hasta').value;
-
-        if(!desde || !hasta) { alert("Por favor, selecciona fecha de inicio y fin."); return; }
+        if(!desde || !hasta) return;
         
         let fechaDesde = new Date(desde + "T00:00:00");
         let fechaHasta = new Date(hasta + "T00:00:00");
-
-        if(fechaHasta < fechaDesde) { alert("La fecha 'Hasta' debe ser posterior a 'Desde'."); return; }
+        if(fechaHasta < fechaDesde) return;
 
         let diffTiempo = Math.abs(fechaHasta - fechaDesde);
         let diasTomados = Math.ceil(diffTiempo / (1000 * 60 * 60 * 24)) + 1;
 
-        vacacionesTomadas.push({
+        await addDoc(vacRef, {
             desdeStr: fechaDesde.toLocaleDateString(),
             hastaStr: fechaHasta.toLocaleDateString(),
             dias: diasTomados
         });
-
         document.getElementById('vacaciones-desde').value = '';
         document.getElementById('vacaciones-hasta').value = '';
-
-        actualizarListas();
     }
 
-    function eliminarVacaciones(index) {
-        vacacionesTomadas.splice(index, 1);
-        actualizarListas();
+    window.eliminarVacaciones = async function(id) {
+        await deleteDoc(doc(db, "vacaciones", id));
     }
 
-    function actualizarListas() {
+    window.actualizarListas = function() {
         let ulFrancos = document.getElementById('lista-francos');
         ulFrancos.innerHTML = '';
-        francosUsados.forEach((fecha, index) => {
-            ulFrancos.innerHTML += `<li>Franco usado el: ${fecha} 
-                <button class="btn-sm btn-delete" onclick="eliminarFranco(${index})">Deshacer</button></li>`;
+        francosUsados.forEach((f) => {
+            ulFrancos.innerHTML += `<li>Franco usado el: ${f.fechaStr} 
+                <button class="btn-sm btn-delete" onclick="eliminarFranco('${f.id}')">Deshacer</button></li>`;
         });
 
         let ulVacaciones = document.getElementById('lista-vacaciones');
         ulVacaciones.innerHTML = '';
         let totalDiasUsados = 0;
-
-        vacacionesTomadas.forEach((v, index) => {
+        vacacionesTomadas.forEach((v) => {
             totalDiasUsados += v.dias;
             ulVacaciones.innerHTML += `<li>Del ${v.desdeStr} al ${v.hastaStr} (${v.dias} días)
-                <button class="btn-sm btn-delete" onclick="eliminarVacaciones(${index})">X</button></li>`;
+                <button class="btn-sm btn-delete" onclick="eliminarVacaciones('${v.id}')">X</button></li>`;
         });
-
-        let diasRestantes = totalVacacionesAnuales - totalDiasUsados;
-        document.getElementById('vacaciones-restantes').innerText = diasRestantes;
+        document.getElementById('vacaciones-restantes').innerText = totalVacacionesAnuales - totalDiasUsados;
     }
 </script>
 </body>
