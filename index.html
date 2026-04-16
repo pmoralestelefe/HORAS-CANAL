@@ -52,6 +52,28 @@
         /* Listas de historial Francos/Vacaciones */
         .lista-historial { list-style-type: none; padding: 0; margin-top: 10px; font-size: 0.9em; color: #555; }
         .lista-historial li { background: #fff; padding: 8px; margin-bottom: 5px; border-radius: 4px; border: 1px solid #ddd; display: flex; justify-content: space-between; }
+        
+        /* --- AJUSTES RESPONSIVOS PARA MÓVILES Y TABLETS --- */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .container { padding: 15px; border-radius: 8px; }
+            .dashboard { grid-template-columns: 1fr 1fr; gap: 10px; }
+            .grid-inputs { grid-template-columns: 1fr; gap: 20px; }
+            .btn-group { flex-direction: column; }
+            .btn { padding: 15px; font-size: 1em; } 
+            input, select { font-size: 16px !important; padding: 12px; } 
+            
+            /* Ajuste para que los inputs en línea no se aplasten en pantallas chicas */
+            .section div[style*="display: flex; gap: 10px;"]:not(.form-group) { flex-wrap: wrap; }
+            .section div[style*="display: flex; gap: 10px;"]:not(.form-group) > input { flex: 1 1 100%; }
+            .section div[style*="display: flex; gap: 10px;"]:not(.form-group) > button { flex: 1 1 100%; margin-top: 5px; }
+            
+            /* Asegurar que la tabla sea fácil de leer y se pueda scrollear */
+            th, td { font-size: 0.85em; padding: 10px 8px; white-space: nowrap; }
+        }
+        @media (max-width: 480px) {
+            .dashboard { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -59,7 +81,7 @@
 <div class="container">
     <h2>Control de Horas Laborales</h2>
 
-    <div class="form-group" style="width: 200px;">
+    <div class="form-group" style="width: 200px; max-width: 100%;">
         <label>Año en curso:</label>
         <select id="select-year"></select>
     </div>
