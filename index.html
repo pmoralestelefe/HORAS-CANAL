@@ -374,8 +374,13 @@
             totalNoct += t.hn;
             francosGanados += t.f;
 
+            // Extraemos y formateamos el día de la semana sin tocar la base de datos
+            let fechaObj = new Date(t.rawEntrada);
+            let diaStr = fechaObj.toLocaleDateString('es-ES', { weekday: 'short' });
+            let diaCapitalizado = diaStr.charAt(0).toUpperCase() + diaStr.slice(1);
+
             let fila = `<tr>
-                <td>${t.fecha}</td>
+                <td>${diaCapitalizado} ${t.fecha}</td>
                 <td>${t.entrada}</td>
                 <td>${t.salida}</td>
                 <td>${fmt(t.h50)}</td>
